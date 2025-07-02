@@ -57,5 +57,5 @@ runs:
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
           CUDA_VERSION=${{ inputs.cuda_version }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=gha,scope=cu${{ inputs.cuda_version}}
+        cache-to: type=gha,mode=max,scope=cu${{ inputs.cuda_version}}
