@@ -64,7 +64,10 @@ def create_interface(
     Returns:
         Gradio Blocks interface
     """
-    global lora_names
+    def update_lora_list():
+        lora_selector_update = gr.update(choices=list_loras(lora_dir))
+
+        return lora_selector_update
 
     def is_video_model(model_type_value):
         return model_type_value in ["Video", "Video with Endframe", "Video F1"]
@@ -92,11 +95,6 @@ def create_interface(
     # Get section boundaries and quick prompts
     section_boundaries = get_section_boundaries()
     quick_prompts = get_quick_prompts()
-
-    def update_loras():
-        lora_names = list_loras(lora_dir)
-
-    update_loras()
 
     # --- Function to update queue stats (Moved earlier to resolve UnboundLocalError) ---
     def update_stats(*args): # Accept any arguments and ignore them
@@ -587,6 +585,7 @@ def create_interface(
                                         value=[],
                                         info="Select one or more LoRAs to use for this job"
                                     )
+                                    block.load(fn=update_lora_list, outputs=[lora_selector])
                                     lora_names_states = gr.State(lora_names)
                                     lora_sliders = {}
                                     for lora in lora_names:
@@ -664,12 +663,7 @@ def create_interface(
                                 teacache_rel_l1_thresh
                             ])
 
-                            def update_lora_list():
-                                global lora_names
-
-                                lora_names = list_loras(lora_dir)
-
-                            refresh_loras.click(fn=update_lora_list)
+                            refresh_loras.click(fn=update_lora_list, inputs=[], outputs=[lora_selector])
 
                             with gr.Row("Metadata"):
                                 json_upload = gr.File(
@@ -2200,159 +2194,6 @@ def create_interface(
                     </div>
                 </div>
                 """)
-
-        # Add CSS for footer
-
-        # gr.HTML("""
-            # <script>
-            # (function() {
-                # "use strict";
-                # console.log("Stat Bar Script: Initializing");
-
-                # const statConfig = {
-                    # ram: { selector: '#toolbar-ram-stat', regex: /\((\d+)%\)/, valueIndex: 1, isRawPercentage: true },
-                    # vram: { selector: '#toolbar-vram-stat', regex: /VRAM: (\d+\.?\d+)\/(\d+\.?\d+)GB/, usedIndex: 1, totalIndex: 2, isRawPercentage: false },
-                    # gpu: { selector: '#toolbar-gpu-stat', regex: /GPU: \d+°C (\d+)%/, valueIndex: 1, isRawPercentage: true }
-                # };
-
-                # function setBarPercentage(statElement, percentage) {
-                    # if (!statElement) {
-                        # console.warn("Stat Bar Script: setBarPercentage called with no element.");
-                        # return;
-                    # }
-                    # let bar = statElement.querySelector('.stat-bar');
-                    # if (!bar) {
-                        # console.log("Stat Bar Script: Creating .stat-bar for", statElement.id);
-                        # bar = document.createElement('div');
-                        # bar.className = 'stat-bar';
-                        # statElement.insertBefore(bar, statElement.firstChild);
-                    # }
-                    # const clampedPercentage = Math.min(100, Math.max(0, parseFloat(percentage)));
-                    # statElement.style.setProperty('--stat-percentage', clampedPercentage + '%');
-                    # // console.log("Stat Bar Script: Updated", statElement.id, "to", clampedPercentage + "%");
-                # }
-
-                # function updateSingleStatVisual(key, config) {
-                    # try {
-                        # const container = document.querySelector(config.selector);
-                        # if (!container) {
-                            # // console.warn("Stat Bar Script: Container not found for", key, config.selector);
-                            # return false; // Element not ready
-                        # }
-                        # const textarea = container.querySelector('textarea');
-                        # if (!textarea) {
-                            # // console.warn("Stat Bar Script: Textarea not found for", key);
-                            # return false; // Element not ready
-                        # }
-
-                        # const textValue = textarea.value;
-                        # if (textValue === "RAM: N/A" || textValue === "VRAM: N/A" || textValue === "GPU: N/A") {
-                             # setBarPercentage(container, 0); // Set to 0 if N/A
-                             # return true;
-                        # }
-
-                        # const match = textValue.match(config.regex);
-                        # if (match) {
-                            # let percentage = 0;
-                            # if (config.isRawPercentage) {
-                                # percentage = parseInt(match[config.valueIndex]);
-                            # } else { // VRAM case
-                                # const used = parseFloat(match[config.usedIndex]);
-                                # const total = parseFloat(match[config.totalIndex]);
-                                # percentage = (total > 0) ? (used / total) * 100 : 0;
-                            # }
-                            # setBarPercentage(container, percentage);
-                        # } else {
-                            # // console.warn("Stat Bar Script: Regex mismatch for", key, "-", textValue);
-                             # setBarPercentage(container, 0); // Default to 0 on mismatch after initial load
-                        # }
-                        # return true; // Processed or N/A
-                    # } catch (error) {
-                        # console.error("Stat Bar Script: Error updating visual for", key, error);
-                        # return true; // Assume processed to avoid retry loops on error
-                    # }
-                # }
-                
-                # function updateAllStatVisuals() {
-                    # let allReady = true;
-                    # for (const key in statConfig) {
-                        # if (!updateSingleStatVisual(key, statConfig[key])) {
-                            # allReady = false;
-                        # }
-                    # }
-                    # return allReady;
-                # }
-
-                # function initStatBars() {
-                    # console.log("Stat Bar Script: initStatBars called");
-                    # if (updateAllStatVisuals()) {
-                        # console.log("Stat Bar Script: All stats initialized. Setting up MutationObserver.");
-                        # setupMutationObservers();
-                    # } else {
-                        # console.log("Stat Bar Script: Elements not ready, retrying init in 250ms.");
-                        # setTimeout(initStatBars, 250); // Retry if not all elements were ready
-                    # }
-                # }
-
-                # function setupMutationObservers() {
-                    # const observer = new MutationObserver((mutationsList) => {
-                        # // Use a Set to avoid redundant updates if multiple mutations point to the same stat
-                        # const changedStats = new Set();
-
-                        # for (const mutation of mutationsList) {
-                            # let targetElement = mutation.target;
-                            # // Traverse up to find the .toolbar-stat-textbox parent if mutation is deep
-                            # while(targetElement && !targetElement.matches('.toolbar-stat-textbox')) {
-                                # targetElement = targetElement.parentElement;
-                            # }
-
-                            # if (targetElement && targetElement.matches('.toolbar-stat-textbox')) {
-                                # for (const key in statConfig) {
-                                    # if (targetElement.id === statConfig[key].selector.substring(1)) {
-                                        # changedStats.add(key);
-                                        # break;
-                                    # }
-                                # }
-                            # }
-                        # }
-                        # if (changedStats.size > 0) {
-                           # // console.log("Stat Bar Script: MutationObserver detected changes for:", Array.from(changedStats));
-                           # changedStats.forEach(key => updateSingleStatVisual(key, statConfig[key]));
-                        # }
-                    # });
-
-                    # for (const key in statConfig) {
-                        # const container = document.querySelector(statConfig[key].selector);
-                        # if (container) {
-                            # // Observe the container for changes to its children (like textarea value)
-                            # // and the textarea itself if it exists.
-                            # observer.observe(container, { childList: true, subtree: true, characterData: true });
-                            # console.log("Stat Bar Script: Observer attached to", container.id);
-                        # } else {
-                            # console.warn("Stat Bar Script: Could not attach observer, container not found for", key);
-                        # }
-                    # }
-                # }
-
-                # // More robust DOM ready check
-                # if (document.readyState === "complete" || (document.readyState !== "loading" && !document.documentElement.doScroll)) {
-                    # console.log("Stat Bar Script: DOM already ready.");
-                    # initStatBars();
-                # } else {
-                    # document.addEventListener("DOMContentLoaded", () => {
-                        # console.log("Stat Bar Script: DOMContentLoaded event.");
-                        # initStatBars();
-                    # });
-                # }
-                 # // Fallback for Gradio's dynamic loading, if DOMContentLoaded isn't enough
-                 # window.addEventListener('gradio.rendered', () => {
-                    # console.log('Stat Bar Script: Gradio rendered event detected.');
-                    # initStatBars();
-                # });
-
-            # })();
-            # </script>
-        # """)
 
         # --- Function to update latents display layout on interface load ---
         def update_latents_layout_on_load():
