@@ -27,6 +27,7 @@ from modules.video_queue import JobStatus, Job, JobType
 from modules.prompt_handler import get_section_boundaries, get_quick_prompts, parse_timestamped_prompt
 from modules.llm_enhancer import enhance_prompt
 from modules.llm_captioner import caption_image
+from diffusers_helper.lora_utils import list_loras
 from diffusers_helper.gradio.progress_bar import make_progress_bar_css, make_progress_bar_html
 from diffusers_helper.bucket_tools import find_nearest_bucket
 from modules.pipelines.metadata_utils import create_metadata
@@ -36,19 +37,18 @@ from modules.toolbox_app import tb_processor
 from modules.toolbox_app import tb_create_video_toolbox_ui, tb_get_formatted_toolbar_stats
 from modules.xy_plot_ui import create_xy_plot_ui, xy_plot_process
 
-# Define the dummy LoRA name as a constant
+# Store our LoRA list here
+lora_names = []
 
 def create_interface(
     process_fn,
     monitor_fn,
     end_process_fn,
     update_queue_status_fn,
-    load_lora_file_fn,
     job_queue,
     settings,
+    lora_dir: str,
     default_prompt: str = '[1s: The person waves hello] [3s: The person jumps up and down] [5s: The person does a dance]',
-    lora_names: list = [],
-    lora_values: list = []
 ):
     """
     Create the Gradio interface for the video generation application
@@ -64,6 +64,8 @@ def create_interface(
     Returns:
         Gradio Blocks interface
     """
+    global lora_names
+
     def is_video_model(model_type_value):
         return model_type_value in ["Video", "Video with Endframe", "Video F1"]
 
@@ -87,10 +89,14 @@ def create_interface(
             )
 
 
-
     # Get section boundaries and quick prompts
     section_boundaries = get_section_boundaries()
     quick_prompts = get_quick_prompts()
+
+    def update_loras():
+        lora_names = list_loras(lora_dir)
+
+    update_loras()
 
     # --- Function to update queue stats (Moved earlier to resolve UnboundLocalError) ---
     def update_stats(*args): # Accept any arguments and ignore them
@@ -588,6 +594,8 @@ def create_interface(
                                             minimum=0.0, maximum=2.0, value=1.0, step=0.01,
                                             label=f"{lora} Weight", visible=False, interactive=True
                                         )
+                                with gr.Row():
+                                    refresh_loras = gr.Button("🔄 Refresh List")
                             with gr.Accordion("Latent Image Options", open=False):
                                 latent_type = gr.Dropdown(
                                     ["Noise", "White", "Black", "Green Screen"], label="Latent Image", value="Noise", info="Used as a starting point if no image is provided"
@@ -655,6 +663,13 @@ def create_interface(
                                 teacache_num_steps,
                                 teacache_rel_l1_thresh
                             ])
+
+                            def update_lora_list():
+                                global lora_names
+
+                                lora_names = list_loras(lora_dir)
+
+                            refresh_loras.click(fn=update_lora_list)
 
                             with gr.Row("Metadata"):
                                 json_upload = gr.File(
@@ -1030,7 +1045,7 @@ def create_interface(
                             value=settings.get("metadata_dir"),
                             placeholder="Path to save metadata files"
                         )
-                        lora_dir = gr.Textbox(
+                        user_lora_dir = gr.Textbox(
                             label="LoRA Directory",
                             value=settings.get("lora_dir"),
                             placeholder="Path to LoRA models"
@@ -1053,7 +1068,7 @@ def create_interface(
                         status = gr.HTML("")
                         cleanup_output = gr.Textbox(label="Cleanup Status", interactive=False)
 
-                        def save_settings(save_metadata, gpu_memory_preservation, mp4_crf, clean_up_videos, auto_cleanup_on_startup_val, latents_display_top_val, override_system_prompt_value, system_prompt_template_value, output_dir, metadata_dir, lora_dir, gradio_temp_dir, auto_save, selected_theme, startup_model_type_val, startup_preset_name_val):
+                        def save_settings(save_metadata, gpu_memory_preservation, mp4_crf, clean_up_videos, auto_cleanup_on_startup_val, latents_display_top_val, override_system_prompt_value, system_prompt_template_value, output_dir, metadata_dir, user_lora_dir, gradio_temp_dir, auto_save, selected_theme, startup_model_type_val, startup_preset_name_val):
                             """Handles the manual 'Save Settings' button click."""
                             # This function is for the manual save button.
                             # It collects all current UI values and saves them.
@@ -1077,7 +1092,7 @@ def create_interface(
                                     system_prompt_template=processed_template,
                                     output_dir=output_dir,
                                     metadata_dir=metadata_dir,
-                                    lora_dir=lora_dir,
+                                    user_lora_dir=user_lora_dir,
                                     gradio_temp_dir=gradio_temp_dir,
                                     auto_save_settings=auto_save,
                                     gradio_theme=selected_theme,
@@ -1119,7 +1134,7 @@ def create_interface(
                         # REMOVE `cleanup_temp_folder` from the `inputs` list
                         save_btn.click(
                             fn=save_settings,
-                            inputs=[save_metadata, gpu_memory_preservation, mp4_crf, clean_up_videos, auto_cleanup_on_startup, latents_display_top, override_system_prompt, system_prompt_template, output_dir, metadata_dir, lora_dir, gradio_temp_dir, auto_save, theme_dropdown, startup_model_type_dropdown, startup_preset_name_dropdown],
+                            inputs=[save_metadata, gpu_memory_preservation, mp4_crf, clean_up_videos, auto_cleanup_on_startup, latents_display_top, override_system_prompt, system_prompt_template, output_dir, metadata_dir, user_lora_dir, gradio_temp_dir, auto_save, theme_dropdown, startup_model_type_dropdown, startup_preset_name_dropdown],
                             outputs=[status]
                         ).then(
                             # NEW: Update latents display layout after manual save
@@ -1192,7 +1207,7 @@ def create_interface(
                         # Using .blur for text changes so they are processed after the user finishes, not on every keystroke
                         output_dir.blur(lambda v: handle_individual_setting_change("output_dir", v, "Output Directory"), inputs=[output_dir], outputs=[status])
                         metadata_dir.blur(lambda v: handle_individual_setting_change("metadata_dir", v, "Metadata Directory"), inputs=[metadata_dir], outputs=[status])
-                        lora_dir.blur(lambda v: handle_individual_setting_change("lora_dir", v, "LoRA Directory"), inputs=[lora_dir], outputs=[status])
+                        user_lora_dir.blur(lambda v: handle_individual_setting_change("lora_dir", v, "LoRA Directory"), inputs=[user_lora_dir], outputs=[status])
                         gradio_temp_dir.blur(lambda v: handle_individual_setting_change("gradio_temp_dir", v, "Gradio Temporary Directory"), inputs=[gradio_temp_dir], outputs=[status])
                         
                         auto_save.change(lambda v: handle_individual_setting_change("auto_save_settings", v, "Auto-save Settings"), inputs=[auto_save], outputs=[status])

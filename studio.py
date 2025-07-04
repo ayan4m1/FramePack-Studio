@@ -49,7 +49,6 @@ from modules.video_queue import VideoJobQueue, JobStatus
 from modules.prompt_handler import parse_timestamped_prompt
 from modules.interface import create_interface, format_queue_status
 from modules.settings import Settings
-from modules import DUMMY_LORA_NAME # Import the constant
 from modules.pipelines.metadata_utils import create_metadata
 from modules.pipelines.worker import worker
 
@@ -172,10 +171,6 @@ image_encoder.requires_grad_(False)
 lora_dir = os.path.join(os.path.dirname(__file__), 'loras')
 os.makedirs(lora_dir, exist_ok=True)
 
-# Initialize LoRA support - moved scanning after settings load
-lora_names = []
-lora_values = [] # This seems unused for population, might be related to weights later
-
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define default LoRA folder path relative to the script directory (used if setting is missing)
@@ -211,28 +206,6 @@ if settings.get("auto_cleanup_on_startup", False):
     print(f"{cleanup_summary}") # This cleaner print handles the multiline string well
     
     print("--- Startup Cleanup Complete ---")
-        
-# --- Populate LoRA names AFTER settings are loaded ---
-lora_folder_from_settings: str = settings.get("lora_dir", default_lora_folder) # Use setting, fallback to default
-print(f"Scanning for LoRAs in: {lora_folder_from_settings}")
-if os.path.isdir(lora_folder_from_settings):
-    try:
-        for root, _, files in os.walk(lora_folder_from_settings):
-            for file in files:
-                if file.endswith('.safetensors') or file.endswith('.pt'):
-                    lora_relative_path = os.path.relpath(os.path.join(root, file), lora_folder_from_settings)
-                    lora_name = str(PurePath(lora_relative_path).with_suffix(''))
-                    lora_names.append(lora_name)
-        print(f"Found LoRAs: {lora_names}")
-        # Temp solution for only 1 lora
-        if len(lora_names) == 1:
-            lora_names.append(DUMMY_LORA_NAME)
-    except Exception as e:
-        print(f"Error scanning LoRA directory '{lora_folder_from_settings}': {e}")
-else:
-    print(f"LoRA directory not found: {lora_folder_from_settings}")
-# --- End LoRA population ---
-
 
 # Create job queue
 job_queue = VideoJobQueue()
@@ -683,16 +656,18 @@ def monitor_job(job_id=None):
 # Set Gradio temporary directory from settings
 os.environ["GRADIO_TEMP_DIR"] = settings.get("gradio_temp_dir")
 
+# Get LoRA dir from settings, with fallback
+lora_folder_from_settings: str = settings.get("lora_dir", default_lora_folder)
+
 # Create the interface
 interface = create_interface(
     process_fn=process,
     monitor_fn=monitor_job,
     end_process_fn=end_process,
     update_queue_status_fn=update_queue_status,
-    load_lora_file_fn=load_lora_file,
     job_queue=job_queue,
     settings=settings,
-    lora_names=lora_names # Explicitly pass the found LoRA names
+    lora_dir=lora_folder_from_settings
 )
 
 # Launch the interface

@@ -4,6 +4,8 @@ from diffusers.loaders.lora_pipeline import _fetch_state_dict
 from diffusers.loaders.lora_conversion_utils import _convert_hunyuan_video_lora_to_diffusers
 from diffusers.utils.peft_utils import set_weights_and_activate_adapters
 from diffusers.loaders.peft import _SET_ADAPTER_SCALE_FN_MAPPING
+from modules import DUMMY_LORA_NAME # Import the constant
+import os
 import torch
 
 FALLBACK_CLASS_ALIASES = {
@@ -192,3 +194,26 @@ def set_adapters(
     set_weights_and_activate_adapters(transformer, adapter_names, final_weights)
     
     print(f"Adapters {adapter_names} activated with weights {final_weights}.")
+
+def list_loras(lora_dir: str):
+    lora_names = []
+
+    print(f"Scanning for LoRAs in: {lora_dir}")
+    if os.path.isdir(lora_dir):
+        try:
+            for root, _, files in os.walk(lora_dir):
+                for file in files:
+                    if file.endswith('.safetensors') or file.endswith('.pt'):
+                        lora_relative_path = os.path.relpath(os.path.join(root, file), lora_dir)
+                        lora_name = str(PurePath(lora_relative_path).with_suffix(''))
+                        lora_names.append(lora_name)
+            print(f"Found LoRAs: {lora_names}")
+            # Temp solution for only 1 lora
+            if len(lora_names) == 1:
+                lora_names.append(DUMMY_LORA_NAME)
+        except Exception as e:
+            print(f"Error scanning LoRA directory '{lora_dir}': {e}")
+    else:
+        print(f"LoRA directory not found: {lora_dir}")
+
+    return lora_names
